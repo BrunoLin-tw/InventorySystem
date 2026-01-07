@@ -12,19 +12,24 @@ using System.Windows.Forms;
 
 namespace InventorySystem;
 
-public partial class SalesOrderForm : Form
-{
-    private readonly OrderService _service;
-    private readonly ExcelService _excelService;
-    private readonly SystemService _systemService;
-    private List<SalesOrder> _orders = new();
-    private PrintDocument _printDocument = null!;
-    private PrintPreviewDialog _printPreviewDialog = null!;
-    private SystemSettings _printSettings = new();
-    private int _currentPrintIndex;
-    private int _currentPageNumber;
-    private SalesOrder? _currentPrintOrder;
-    private List<SalesOrderItem> _currentPrintOrderItems = new();
+    public partial class SalesOrderForm : Form
+    {
+        private readonly OrderService _service;
+        private readonly ExcelService _excelService;
+        private readonly SystemService _systemService;
+        private List<SalesOrder> _orders = new();
+        private PrintDocument _printDocument = null!;
+        private PrintPreviewDialog _printPreviewDialog = null!;
+        private SystemSettings _printSettings = new();
+        private int _currentPrintIndex;
+        private int _currentPageNumber;
+        private SalesOrder? _currentPrintOrder;
+        private List<SalesOrderItem> _currentPrintOrderItems = new();
+        private ComboBox _quickFilterCombo = null!;
+        private DateTimePicker _startDatePicker = null!;
+        private DateTimePicker _endDatePicker = null!;
+        private ComboBox _searchFieldCombo = null!;
+        private TextBox _keywordTextBox = null!;
 
     public SalesOrderForm(OrderService service, ExcelService excelService, SystemService systemService)
     {
@@ -40,23 +45,23 @@ public partial class SalesOrderForm : Form
         // Designer placeholder - UI created in Load event
     }
 
-    private async void SalesOrderForm_Load(object sender, EventArgs e)
-    {
-        this.Text = "銷貨管理";
-        this.Size = new Size(900, 650);
-        this.StartPosition = FormStartPosition.CenterParent;
-        SetupUI();
-        await LoadOrders();
-        _printSettings = await _systemService.GetSettingsAsync();
-        _printDocument = CreatePrintDocument();
-        _printPreviewDialog = new PrintPreviewDialog
+        private async void SalesOrderForm_Load(object sender, EventArgs e)
         {
-            Icon = this.Icon,
-            Document = _printDocument,
-            Width = 900,
-            Height = 700
-        };
-    }
+            this.Text = "銷貨管理";
+            this.Size = new Size(900, 650);
+            this.StartPosition = FormStartPosition.CenterParent;
+            SetupUI();
+            await ExecuteSearchAsync();
+            _printSettings = await _systemService.GetSettingsAsync();
+            _printDocument = CreatePrintDocument();
+            _printPreviewDialog = new PrintPreviewDialog
+            {
+                Icon = this.Icon,
+                Document = _printDocument,
+                Width = 900,
+                Height = 700
+            };
+        }
 
     private void SetupUI()
     {
@@ -68,43 +73,45 @@ public partial class SalesOrderForm : Form
                 Padding = new Padding(10)
             };
 
-        // Ensure row sizing: top row autosizes for buttons, bottom row fills remaining space for grid
         mainPanel.RowStyles.Clear();
         mainPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         mainPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
-        var btnPanel = new FlowLayoutPanel
+        var toolbar = new FlowLayoutPanel
         {
             Dock = DockStyle.Top,
-            Height = 40,
             FlowDirection = FlowDirection.LeftToRight,
-            AutoSize = true
+            AutoSize = true,
+            WrapContents = false
         };
 
-        var btnAdd = new Button { Text = "新增訂單", Width = 100 };
+        var btnAdd = new Button { Text = "新增", Width = 60 };
         btnAdd.Click += (s, e) => OpenSalesOrderDialog(null);
 
-        var btnDelete = new Button { Text = "刪除", Width = 80 };
+        var btnDelete = new Button { Text = "刪除", Width = 60 };
         btnDelete.Click += (s, e) => DeleteSelectedOrder();
 
-        var btnRefresh = new Button { Text = "刷新", Width = 80 };
-        btnRefresh.Click += async (s, e) => await LoadOrders();
+        var btnRefresh = new Button { Text = "刷新", Width = 60 };
+        btnRefresh.Click += async (s, e) => await ExecuteSearchAsync();
 
-        var btnImport = new Button { Text = "匯入 Excel", Width = 110 };
+        var btnImport = new Button { Text = "匯入", Width = 60 };
         btnImport.Click += async (s, e) => await ImportExcelAsync();
 
-        var btnExport = new Button { Text = "匯出 Excel", Width = 110 };
+        var btnExport = new Button { Text = "匯出", Width = 60 };
         btnExport.Click += async (s, e) => await ExportExcelAsync();
 
-        var btnPrint = new Button { Text = "列印銷貨單", Width = 130 };
+        var btnPrint = new Button { Text = "列印", Width = 60 };
         btnPrint.Click += (s, e) => PrintOrders();
 
-        btnPanel.Controls.Add(btnAdd);
-        btnPanel.Controls.Add(btnDelete);
-        btnPanel.Controls.Add(btnRefresh);
-        btnPanel.Controls.Add(btnImport);
-        btnPanel.Controls.Add(btnExport);
-        btnPanel.Controls.Add(btnPrint);
+        var queryPanel = CreateQueryPanel();
+
+        toolbar.Controls.Add(btnAdd);
+        toolbar.Controls.Add(queryPanel);
+        toolbar.Controls.Add(btnDelete);
+        toolbar.Controls.Add(btnRefresh);
+        toolbar.Controls.Add(btnImport);
+        toolbar.Controls.Add(btnExport);
+        toolbar.Controls.Add(btnPrint);
 
         var dgv = new DataGridView
         {
@@ -116,13 +123,11 @@ public partial class SalesOrderForm : Form
             Name = "dgvOrders"
         };
 
-        // Selection behaviour: select full row and only one row at a time
         dgv.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
         dgv.MultiSelect = false;
-
         dgv.CellDoubleClick += DgvOrders_CellDoubleClick;
-        
-            dgv.Columns.Add(new DataGridViewTextBoxColumn { DataPropertyName = "Id", HeaderText = "ID", Width = 50 });
+
+        dgv.Columns.Add(new DataGridViewTextBoxColumn { DataPropertyName = "Id", HeaderText = "ID", Width = 50 });
         dgv.Columns.Add(new DataGridViewTextBoxColumn { DataPropertyName = "OrderNumber", HeaderText = "訂單號", Width = 120 });
         dgv.Columns.Add(new DataGridViewTextBoxColumn { DataPropertyName = "CustomerName", HeaderText = "客戶", Width = 200 });
         dgv.Columns.Add(new DataGridViewTextBoxColumn { DataPropertyName = "OrderDate", HeaderText = "日期", Width = 120, DefaultCellStyle = new DataGridViewCellStyle { Format = "yyyy-MM-dd" } });
@@ -146,11 +151,129 @@ public partial class SalesOrderForm : Form
         });
         dgv.Columns.Add(new DataGridViewTextBoxColumn { DataPropertyName = "Total", HeaderText = "總金額", Width = 120, DefaultCellStyle = new DataGridViewCellStyle { Format = "N2", Alignment = DataGridViewContentAlignment.MiddleRight } });
 
-        mainPanel.Controls.Add(btnPanel, 0, 0);
-            mainPanel.Controls.Add(dgv, 0, 1);
+        mainPanel.Controls.Add(toolbar, 0, 0);
+        mainPanel.Controls.Add(dgv, 0, 1);
 
-            this.Controls.Add(mainPanel);
+        this.Controls.Add(mainPanel);
+    }
+
+    private FlowLayoutPanel CreateQueryPanel()
+    {
+        var panel = new FlowLayoutPanel
+        {
+            FlowDirection = FlowDirection.LeftToRight,
+            AutoSize = true,
+            WrapContents = false,
+            Margin = new Padding(5, 0, 0, 0)
+        };
+
+        panel.Controls.Add(new Label { Text = "速查", AutoSize = true, Margin = new Padding(5, 7, 3, 0) });
+
+        _quickFilterCombo = new ComboBox
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Width = 80,
+            Margin = new Padding(0, 3, 5, 3)
+        };
+        _quickFilterCombo.Items.AddRange(new[] { "今日", "昨日", "本週", "上週", "本月", "上月" });
+        _quickFilterCombo.SelectedIndexChanged += QuickFilterCombo_SelectedIndexChanged;
+        panel.Controls.Add(_quickFilterCombo);
+
+        panel.Controls.Add(new Label { Text = "開始", AutoSize = true, Margin = new Padding(5, 7, 3, 0) });
+        _startDatePicker = new DateTimePicker { Format = DateTimePickerFormat.Short, Width = 100, Margin = new Padding(0, 3, 5, 3) };
+        panel.Controls.Add(_startDatePicker);
+
+        panel.Controls.Add(new Label { Text = "截止", AutoSize = true, Margin = new Padding(5, 7, 3, 0) });
+        _endDatePicker = new DateTimePicker { Format = DateTimePickerFormat.Short, Width = 100, Margin = new Padding(0, 3, 5, 3) };
+        panel.Controls.Add(_endDatePicker);
+
+        panel.Controls.Add(new Label { Text = "欄位", AutoSize = true, Margin = new Padding(5, 7, 3, 0) });
+        _searchFieldCombo = new ComboBox
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Width = 90,
+            Margin = new Padding(0, 3, 5, 3)
+        };
+        _searchFieldCombo.Items.AddRange(new[] { "訂單號", "客戶名稱" });
+        panel.Controls.Add(_searchFieldCombo);
+
+        panel.Controls.Add(new Label { Text = "關鍵字", AutoSize = true, Margin = new Padding(5, 7, 3, 0) });
+        _keywordTextBox = new TextBox { Width = 140, Margin = new Padding(0, 3, 5, 3) };
+        panel.Controls.Add(_keywordTextBox);
+
+        var btnSearch = new Button { Text = "查詢", Width = 60, Margin = new Padding(0, 3, 5, 3) };
+        btnSearch.Click += async (s, e) => await ExecuteSearchAsync();
+        panel.Controls.Add(btnSearch);
+
+        _searchFieldCombo.SelectedIndex = 0;
+        _quickFilterCombo.SelectedItem = "本月";
+        ApplyQuickFilterDates();
+        return panel;
+    }
+
+    private void QuickFilterCombo_SelectedIndexChanged(object? sender, EventArgs e)
+    {
+        ApplyQuickFilterDates();
+    }
+
+    private void ApplyQuickFilterDates()
+    {
+        if (_quickFilterCombo.SelectedItem is not string selection)
+        {
+            return;
         }
+
+        var today = DateTime.Today;
+        var culture = CultureInfo.CurrentCulture;
+        var firstDayOfWeek = culture.DateTimeFormat.FirstDayOfWeek;
+        DateTime start;
+        DateTime end;
+
+        switch (selection)
+        {
+            case "今日":
+                start = end = today;
+                break;
+            case "昨日":
+                start = end = today.AddDays(-1);
+                break;
+            case "本週":
+                start = GetStartOfWeek(today, firstDayOfWeek);
+                end = start.AddDays(6);
+                break;
+            case "上週":
+                var currentWeekStart = GetStartOfWeek(today, firstDayOfWeek);
+                start = currentWeekStart.AddDays(-7);
+                end = currentWeekStart.AddDays(-1);
+                break;
+            case "本月":
+                start = new DateTime(today.Year, today.Month, 1);
+                end = start.AddMonths(1).AddDays(-1);
+                break;
+            case "上月":
+                var firstOfMonth = new DateTime(today.Year, today.Month, 1);
+                start = firstOfMonth.AddMonths(-1);
+                end = firstOfMonth.AddDays(-1);
+                break;
+            default:
+                start = today;
+                end = today;
+                break;
+        }
+
+        _startDatePicker.Value = start;
+        _endDatePicker.Value = end;
+    }
+
+    private static DateTime GetStartOfWeek(DateTime date, DayOfWeek firstDayOfWeek)
+    {
+        while (date.DayOfWeek != firstDayOfWeek)
+        {
+            date = date.AddDays(-1);
+        }
+
+        return date;
+    }
 
     private PrintDocument CreatePrintDocument()
     {
@@ -336,38 +459,48 @@ public partial class SalesOrderForm : Form
         graphics.DrawString(pageNumberText, tableFont, Brushes.Gray, new PointF(marginBounds.Right - pageNumberSize.Width, marginBounds.Bottom + 5 - pageNumberSize.Height));
     }
 
-    private async Task LoadOrders()
+    private async Task ExecuteSearchAsync()
     {
         try
         {
-            _orders = await _service.GetAllSalesOrdersAsync();
-            var dgv = this.Controls.Find("dgvOrders", true).FirstOrDefault() as DataGridView;
-            if (dgv != null)
-            {
-                dgv.DataSource = _orders.Select(o =>
-                {
-        var items = o.Items;
-        var totalQuantity = items?.Sum(i => i.Quantity) ?? 0;
-        var totalAmount = items?.Sum(i => i.Quantity * i.UnitPrice) ?? 0m;
-                    var averageUnitPrice = totalQuantity > 0 ? totalAmount / totalQuantity : 0m;
+            var start = _startDatePicker?.Value.Date;
+            var end = _endDatePicker?.Value.Date;
+            var field = _searchFieldCombo?.SelectedItem as string ?? "訂單號";
+            var keyword = _keywordTextBox?.Text;
 
-                    return new
-                    {
-                        o.Id,
-                        o.OrderNumber,
-                        CustomerName = o.Customer?.Name ?? "無",
-                        o.OrderDate,
-                        Quantity = totalQuantity,
-                        UnitPrice = averageUnitPrice,
-                        o.Total
-                    };
-                }).ToList();
-            }
+            _orders = await _service.SearchSalesOrdersAsync(start, end, field, keyword);
+            BindOrdersToGrid();
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"載入失敗: {ex.Message}", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show($"查詢失敗: {ex.Message}", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
+    }
+
+    private void BindOrdersToGrid()
+    {
+        var dgv = this.Controls.Find("dgvOrders", true).FirstOrDefault() as DataGridView;
+        if (dgv == null) 
+            return;
+
+        dgv.DataSource = _orders.Select(o =>
+        {
+            var items = o.Items;
+            var totalQuantity = items?.Sum(i => i.Quantity) ?? 0;
+            var totalAmount = items?.Sum(i => i.Quantity * i.UnitPrice) ?? 0m;
+            var averageUnitPrice = totalQuantity > 0 ? totalAmount / totalQuantity : 0m;
+
+            return new
+            {
+                o.Id,
+                o.OrderNumber,
+                CustomerName = o.Customer?.Name ?? "無",
+                o.OrderDate,
+                Quantity = totalQuantity,
+                UnitPrice = averageUnitPrice,
+                o.Total
+            };
+        }).ToList();
     }
 
     private async void DeleteSelectedOrder()
@@ -382,7 +515,7 @@ public partial class SalesOrderForm : Form
                 try
                 {
                     await _service.DeleteSalesOrderAsync(order.Id);
-                    await LoadOrders();
+                    await ExecuteSearchAsync();
                 }
                 catch (Exception ex)
                 {
@@ -401,7 +534,7 @@ public partial class SalesOrderForm : Form
         var dialog = new SalesOrderEditDialog(_service, order);
         if (dialog.ShowDialog(this) == DialogResult.OK)
         {
-            await LoadOrders();
+            await ExecuteSearchAsync();
         }
     }
 
@@ -457,7 +590,7 @@ public partial class SalesOrderForm : Form
             }
 
             MessageBox.Show(message, "匯入完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            await LoadOrders();
+            await ExecuteSearchAsync();
         }
         catch (Exception ex)
         {

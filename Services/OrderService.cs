@@ -67,6 +67,45 @@ namespace InventorySystem.Services
                 .ToListAsync();
         }
 
+        public async Task<List<SalesOrder>> SearchSalesOrdersAsync(
+            DateTime? startDate,
+            DateTime? endDate,
+            string? searchField,
+            string? keyword)
+        {
+            var query = _context.SalesOrders
+                .Include(o => o.Customer)
+                .Include(o => o.Items)
+                .ThenInclude(i => i.Product)
+                .AsQueryable();
+
+            if (startDate.HasValue)
+            {
+                query = query.Where(o => o.OrderDate >= startDate.Value.Date);
+            }
+
+            if (endDate.HasValue)
+            {
+                var nextDay = endDate.Value.Date.AddDays(1);
+                query = query.Where(o => o.OrderDate < nextDay);
+            }
+
+            if (!string.IsNullOrWhiteSpace(keyword))
+            {
+                var trimmed = keyword.Trim();
+                if (searchField == "客戶名稱")
+                {
+                    query = query.Where(o => EF.Functions.Like(o.Customer!.Name ?? string.Empty, $"%{trimmed}%"));
+                }
+                else
+                {
+                    query = query.Where(o => EF.Functions.Like(o.OrderNumber ?? string.Empty, $"%{trimmed}%"));
+                }
+            }
+
+            return await query.ToListAsync();
+        }
+
         public async Task<SalesOrder?> GetSalesOrderByIdAsync(int id)
         {
             return await _context.SalesOrders
