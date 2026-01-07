@@ -1,0 +1,27 @@
+# Git ignore for .NET projects
+
+# Binaries and intermediate files
+[Bb]in/
+[Oo]bj/
+
+# Database files
+*.db
+inventory.db
+
+# User-specific files
+*.user
+*.suo
+*.vspscc
+*.vssscc
+
+# Logs
+*.log
+
+# NuGet packages
+packages/
+
+# Project files that should not be tracked
+InventorySystem.csproj.user
+
+# Visual Studio temporary files
+.vs/
