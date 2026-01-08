@@ -127,8 +127,31 @@ namespace InventorySystem.Services
 
         public async Task AddSalesOrderAsync(SalesOrder order)
         {
-            _context.SalesOrders.Add(order);
-            await _context.SaveChangesAsync();
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                _context.SalesOrders.Add(order);
+                await _context.SaveChangesAsync();
+
+                if (order.Items != null && order.Items.Any())
+                {
+                    foreach (var item in order.Items)
+                    {
+                        await _inventoryService.DecreaseStockAsync(
+                            item.ProductId,
+                            item.Quantity,
+                            "Sales Order",
+                            order.OrderNumber);
+                    }
+                }
+
+                await transaction.CommitAsync();
+            }
+            catch
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
         }
 
         public async Task UpdateSalesOrderAsync(SalesOrder order)

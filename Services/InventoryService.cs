@@ -66,5 +66,38 @@ namespace InventorySystem.Services
             _context.InventoryLogs.Add(log);
             await _context.SaveChangesAsync();
         }
+
+        public async Task DecreaseStockAsync(int productId, int quantity, string reason, string? referenceId = null)
+        {
+            var product = await _context.Products.FirstOrDefaultAsync(p => p.Id == productId);
+            if (product == null)
+            {
+                throw new InvalidOperationException($"找不到產品 ID {productId}");
+            }
+
+            if (product.QuantityOnHand < quantity)
+            {
+                throw new InvalidOperationException($"產品 ID {productId} 庫存不足，需求：{quantity}，目前：{product.QuantityOnHand}");
+            }
+
+            product.QuantityOnHand -= quantity;
+
+            var log = new InventoryLog
+            {
+                ProductId = productId,
+                Change = -quantity,
+                QuantityAfter = product.QuantityOnHand,
+                Reason = reason,
+                Timestamp = DateTime.UtcNow
+            };
+
+            if (!string.IsNullOrWhiteSpace(referenceId))
+            {
+                log.Reason = log.Reason is null ? referenceId : $"{log.Reason} ({referenceId})";
+            }
+
+            _context.InventoryLogs.Add(log);
+            await _context.SaveChangesAsync();
+        }
     }
 }
