@@ -1,5 +1,6 @@
 using InventorySystem.Models;
 using Microsoft.EntityFrameworkCore;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -41,6 +42,29 @@ namespace InventorySystem.Services
                 .Where(l => l.ProductId == productId)
                 .OrderByDescending(l => l.Timestamp)
                 .ToListAsync();
+        }
+
+        public async Task IncreaseStockAsync(int productId, int quantity, string reason)
+        {
+            var product = await _context.Products.FirstOrDefaultAsync(p => p.Id == productId);
+            if (product == null)
+            {
+                throw new InvalidOperationException($"找不到產品 ID {productId}");
+            }
+
+            product.QuantityOnHand += quantity;
+
+            var log = new InventoryLog
+            {
+                ProductId = productId,
+                Change = quantity,
+                QuantityAfter = product.QuantityOnHand,
+                Reason = reason,
+                Timestamp = DateTime.UtcNow
+            };
+
+            _context.InventoryLogs.Add(log);
+            await _context.SaveChangesAsync();
         }
     }
 }

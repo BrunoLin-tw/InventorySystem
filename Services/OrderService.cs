@@ -10,10 +10,12 @@ namespace InventorySystem.Services
     public class OrderService
     {
         private readonly InventoryContext _context;
+        private readonly InventoryService _inventoryService;
 
-        public OrderService(InventoryContext context)
+        public OrderService(InventoryContext context, InventoryService inventoryService)
         {
             _context = context;
+            _inventoryService = inventoryService;
         }
 
         // PurchaseOrder methods
@@ -39,6 +41,14 @@ namespace InventorySystem.Services
         {
             _context.PurchaseOrders.Add(order);
             await _context.SaveChangesAsync();
+
+            if (order.Items != null && order.Items.Any())
+            {
+                foreach (var item in order.Items)
+                {
+                    await _inventoryService.IncreaseStockAsync(item.ProductId, item.Quantity, $"Purchase Order #{order.Id}");
+                }
+            }
         }
 
         public async Task UpdatePurchaseOrderAsync(PurchaseOrder order)
