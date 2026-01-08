@@ -510,7 +510,7 @@ namespace InventorySystem;
         {
             var rowIndex = dgv.SelectedRows[0].Index;
             var order = _orders[rowIndex];
-            if (MessageBox.Show($"確定刪除訂單 {order.OrderNumber} 嗎？", "確認", MessageBoxButtons.YesNo) == DialogResult.Yes)
+            if (MessageBox.Show("確定要刪除此訂單嗎？\n\n注意：刪除後，該訂單中的商品數量將自動加回庫存。", "確認", MessageBoxButtons.YesNo) == DialogResult.Yes)
             {
                 try
                 {

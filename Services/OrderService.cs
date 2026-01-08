@@ -162,11 +162,36 @@ namespace InventorySystem.Services
 
         public async Task DeleteSalesOrderAsync(int id)
         {
-            var order = await _context.SalesOrders.FindAsync(id);
-            if (order != null)
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+            try
             {
-                _context.SalesOrders.Remove(order);
-                await _context.SaveChangesAsync();
+                var order = await _context.SalesOrders
+                    .Include(o => o.Items)
+                    .FirstOrDefaultAsync(o => o.Id == id);
+
+                if (order != null)
+                {
+                    if (order.Items != null && order.Items.Any())
+                    {
+                        foreach (var item in order.Items)
+                        {
+                            await _inventoryService.IncreaseStockAsync(
+                                item.ProductId,
+                                item.Quantity,
+                                $"Delete Sales Order #{order.OrderNumber}");
+                        }
+                    }
+
+                    _context.SalesOrders.Remove(order);
+                    await _context.SaveChangesAsync();
+                }
+
+                await transaction.CommitAsync();
+            }
+            catch
+            {
+                await transaction.RollbackAsync();
+                throw;
             }
         }
 
